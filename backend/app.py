@@ -24,7 +24,7 @@ try:
         cred = credentials.Certificate(service_account_info)
     else:
         # Fallback to JSON file
-        cred = credentials.Certificate("backend/serviceAccountKey.json")
+        cred = credentials.Certificate("backend/serviceAccountkey.json")
     
     firebase_admin.initialize_app(cred)
     fs_db = firestore.client()
@@ -116,16 +116,30 @@ def wallet_deposit():
         first_name = data.get('first_name')
         last_name = data.get('last_name')
         user_id = data.get('userId')
-        phone = data.get('phone')  # <-- Accept phone
+        phone = data.get('phone')
 
         print(f"Received deposit request: {data}")  # Debug log
 
+        # Validate required fields
         if not all([amount, email, first_name, last_name, user_id, phone]):
             missing_fields = [field for field, value in [
                 ('amount', amount), ('email', email), ('first_name', first_name),
                 ('last_name', last_name), ('userId', user_id), ('phone', phone)
             ] if not value]
             return jsonify({'error': f'Missing required fields: {missing_fields}'}), 400
+
+        # Validate amount
+        try:
+            amount = float(amount)
+            if amount <= 0 or amount > 100000:
+                return jsonify({'error': 'Amount must be between 1 and 100,000 ETB'}), 400
+        except (ValueError, TypeError):
+            return jsonify({'error': 'Invalid amount format'}), 400
+
+        # Validate email format
+        import re
+        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email):
+            return jsonify({'error': 'Invalid email format'}), 400
 
         tx_ref = f"deposit-{user_id}-{int(time.time())}"
         payload = {

@@ -3,16 +3,38 @@ import {
   doc, 
   addDoc, 
   updateDoc, 
-  onSnapshot, 
-  query, 
-  where, 
+  deleteDoc, 
+  getDocs, 
+  getDoc,
+  onSnapshot,
+  query,
+  where,
   orderBy,
-  serverTimestamp,
+  Timestamp,
   arrayUnion,
-  increment,
-  getDoc
+  arrayRemove
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import { GameRoom, Player } from '../types/game';
+
+// Helper function to handle Firestore errors
+const handleFirestoreError = (error: any, operation: string) => {
+  console.error(`Firestore ${operation} error:`, error);
+
+  if (error.code === 'permission-denied') {
+    throw new Error('You do not have permission to perform this action');
+  } else if (error.code === 'network-request-failed') {
+    throw new Error('Network error. Please check your connection and try again');
+  } else if (error.code === 'unavailable') {
+    throw new Error('Service temporarily unavailable. Please try again later');
+  } else {
+    throw new Error(`Failed to ${operation}. Please try again`);
+  }
+};
+import { 
+  increment,
+  serverTimestamp,
+} from 'firebase/firestore';
 import { GameRoom, Player, BingoCard, Payment } from '../types/game';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -34,53 +56,100 @@ class GameService {
     telegramBotEnabled: boolean = false,
     telegramChannelId?: string
   ): Promise<string> {
-    const gameRoom: Omit<GameRoom, 'id'> = {
-      name: roomName,
-      hostId,
-      players: [],
-      maxPlayers,
-      entryFee,
-      prizePool: 0,
-      status: 'waiting',
-      calledNumbers: [],
-      currentCall: null,
-      createdAt: serverTimestamp(),
-      telegramBotEnabled,
-      ...(telegramBotEnabled && telegramChannelId ? { telegramChannelId } : {})
-    };
+    try {
+      // Validate input
+      if (!roomName || !hostId) {
+        throw new Error('Game name and host ID are required');
+      }
 
-    const docRef = await addDoc(collection(db, 'gameRooms'), {
-      ...gameRoom
-    });
+      if (entryFee < 0 || entryFee > 10000) {
+        throw new Error('Entry fee must be between 0 and 10,000 ETB');
+      }
 
-    return docRef.id;
+      if (maxPlayers < 2 || maxPlayers > 100) {
+        throw new Error('Max players must be between 2 and 100');
+      }
+
+      const gameRoom: Omit<GameRoom, 'id'> = {
+        name: roomName,
+        hostId,
+        players: [],
+        maxPlayers,
+        entryFee,
+        prizePool: 0,
+        status: 'waiting',
+        calledNumbers: [],
+        currentCall: null,
+        createdAt: serverTimestamp(),
+        telegramBotEnabled,
+        ...(telegramBotEnabled && telegramChannelId ? { telegramChannelId } : {})
+      };
+  
+      const docRef = await addDoc(collection(db, 'gameRooms'), {
+        ...gameRoom
+      });
+  
+      return docRef.id;
+    } catch (error) {
+      handleFirestoreError(error, 'create game room');
+      throw error;
+    }
   }
 
   async joinGameRoom(gameRoomId: string, player: Player): Promise<void> {
-    const gameRoomRef = doc(db, 'gameRooms', gameRoomId);
-    await updateDoc(gameRoomRef, {
-      players: arrayUnion(player),
-      prizePool: increment(0) 
-
-    });
+    try {
+      const gameRoomRef = doc(db, 'gameRooms', gameRoomId);
+      await updateDoc(gameRoomRef, {
+        players: arrayUnion(player),
+        prizePool: increment(0) 
+  
+      });
+    } catch (error) {
+      handleFirestoreError(error, 'join game room');
+      throw error;
+    }
   }
 
   async leaveGameRoom(gameRoomId: string, playerId: string): Promise<void> {
     // Proper player removal should be handled server-side or with a transaction.
     // This is a placeholder and may not work as expected.
     // Consider fetching the document, removing the player from the array, and updating.
+    try {
+        // Fetch the game room document
+        const gameRoomRef = doc(db, 'gameRooms', gameRoomId);
+        const gameRoomSnap = await getDoc(gameRoomRef);
+
+        if (!gameRoomSnap.exists()) {
+            throw new Error('Game room not found');
+        }
+
+        const gameRoomData = gameRoomSnap.data() as GameRoom;
+        const updatedPlayers = gameRoomData.players.filter(player => player.id !== playerId);
+
+        await updateDoc(gameRoomRef, {
+            players: updatedPlayers
+        });
+    } catch (error) {
+        handleFirestoreError(error, 'leave game room');
+        throw error;
+    }
   }
 
   async startGame(gameRoomId: string): Promise<void> {
-    const gameRoomRef = doc(db, 'gameRooms', gameRoomId);
-    await updateDoc(gameRoomRef, {
-      status : 'playing',
-    });
-
-    // Start auto-calling numbers after a 5 second countdown
-    setTimeout(() => {
-      this.startAutoCaller(gameRoomId);
-    }, 5000);
+    try {
+      const gameRoomRef = doc(db, 'gameRooms', gameRoomId);
+      await updateDoc(gameRoomRef, {
+        status : 'playing',
+      });
+  
+      // Start auto-calling numbers after a 5 second countdown
+      setTimeout(() => {
+        this.startAutoCaller(gameRoomId);
+      }, 5000);
+    } catch (error) {
+      handleFirestoreError(error, 'start game');
+      throw error;
+    }
   }
 
   private async startAutoCaller(gameRoomId: string): Promise<void> {
@@ -98,31 +167,36 @@ class GameService {
   }
 
   async callNextNumber(gameRoomId: string): Promise<number | null> {
-    const gameRoomRef = doc(db, 'gameRooms', gameRoomId);
-    const gameRoomSnap = await getDoc(gameRoomRef);
-    if (!gameRoomSnap.exists()) return null;
-
-    const data = gameRoomSnap.data() as GameRoom;
-    const calledNumbers = data.calledNumbers || [];
-
-    // Only pick from numbers not already called
-    const availableNumbers = [];
-    for (let i = 1; i <= 75; i++) {
-      if (!calledNumbers.includes(i)) {
-        availableNumbers.push(i);
+    try {
+      const gameRoomRef = doc(db, 'gameRooms', gameRoomId);
+      const gameRoomSnap = await getDoc(gameRoomRef);
+      if (!gameRoomSnap.exists()) return null;
+  
+      const data = gameRoomSnap.data() as GameRoom;
+      const calledNumbers = data.calledNumbers || [];
+  
+      // Only pick from numbers not already called
+      const availableNumbers = [];
+      for (let i = 1; i <= 75; i++) {
+        if (!calledNumbers.includes(i)) {
+          availableNumbers.push(i);
+        }
       }
+  
+      if (availableNumbers.length === 0) return null;
+  
+      const nextNumber = availableNumbers[Math.floor(Math.random() * availableNumbers.length)];
+  
+      await updateDoc(gameRoomRef, {
+        calledNumbers: arrayUnion(nextNumber),
+        currentCall: nextNumber
+      });
+  
+      return nextNumber;
+    } catch (error) {
+      handleFirestoreError(error, 'call next number');
+      return null;
     }
-
-    if (availableNumbers.length === 0) return null;
-
-    const nextNumber = availableNumbers[Math.floor(Math.random() * availableNumbers.length)];
-
-    await updateDoc(gameRoomRef, {
-      calledNumbers: arrayUnion(nextNumber),
-      currentCall: nextNumber
-    });
-
-    return nextNumber;
   }
 
   // Bingo Card Generation
@@ -231,52 +305,77 @@ class GameService {
 
   // Real-time subscriptions
   subscribeToGameRoom(gameRoomId: string, callback: (gameRoom: GameRoom) => void) {
-    const gameRoomRef = doc(db, 'gameRooms', gameRoomId);
-    return onSnapshot(gameRoomRef, (doc) => {
-      if (doc.exists()) {
-        callback({ id: doc.id, ...doc.data() } as GameRoom);
-      }
-    });
+    try {
+      const gameRoomRef = doc(db, 'gameRooms', gameRoomId);
+      return onSnapshot(gameRoomRef, (doc) => {
+        if (doc.exists()) {
+          callback({ id: doc.id, ...doc.data() } as GameRoom);
+        }
+      });
+    } catch (error) {
+      handleFirestoreError(error, 'subscribe to game room');
+      throw error;
+    }
   }
 
   subscribeToGameRooms(callback: (gameRooms: GameRoom[]) => void) {
-    const q = query(
-      collection(db, 'gameRooms'),
-      where('status', 'in', ['waiting', 'starting', 'playing']),
-      orderBy('createdAt', 'desc')
-    );
-
-    return onSnapshot(q, (snapshot) => {
-      const gameRooms = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as GameRoom[];
-      callback(gameRooms);
-    });
+    try {
+      const q = query(
+        collection(db, 'gameRooms'),
+        where('status', 'in', ['waiting', 'starting', 'playing']),
+        orderBy('createdAt', 'desc')
+      );
+  
+      return onSnapshot(q, (snapshot) => {
+        const gameRooms = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as GameRoom[];
+        callback(gameRooms);
+      });
+    } catch (error) {
+      handleFirestoreError(error, 'subscribe to game rooms');
+      throw error;
+    }
   }
 
   // Payment Management
   async recordPayment(payment: Omit<Payment, 'id'>): Promise<string> {
-    const docRef = await addDoc(collection(db, 'payments'), {
-      ...payment,
-      createdAt: serverTimestamp()
-    });
-    return docRef.id;
+    try {
+      const docRef = await addDoc(collection(db, 'payments'), {
+        ...payment,
+        createdAt: serverTimestamp()
+      });
+      return docRef.id;
+    } catch (error) {
+      handleFirestoreError(error, 'record payment');
+      throw error;
+    }
   }
 
   async updatePaymentStatus(paymentId: string, status: Payment['status']): Promise<void> {
-    const paymentRef = doc(db, 'payments', paymentId);
-    await updateDoc(paymentRef, {
-      status,
-      completedAt: status === 'completed' ? serverTimestamp() : null
-    });
+    try {
+      const paymentRef = doc(db, 'payments', paymentId);
+      await updateDoc(paymentRef, {
+        status,
+        completedAt: status === 'completed' ? serverTimestamp() : null
+      });
+    } catch (error) {
+      handleFirestoreError(error, 'update payment status');
+      throw error;
+    }
   }
 
   async updatePrizePool(gameRoomId: string, amount: number): Promise<void> {
-    const gameRoomRef = doc(db, 'gameRooms', gameRoomId);
-    await updateDoc(gameRoomRef, {
-      prizePool: increment(amount)
-    });
+    try{
+      const gameRoomRef = doc(db, 'gameRooms', gameRoomId);
+      await updateDoc(gameRoomRef, {
+        prizePool: increment(amount)
+      });
+    } catch (error) {
+      handleFirestoreError(error, 'update prize pool');
+      throw error;
+    }
   }
 }
 

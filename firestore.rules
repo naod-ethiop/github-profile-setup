@@ -2,49 +2,81 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Helper function to check if user is admin
+    function isAdmin() {
+      return request.auth != null && 
+             request.auth.token.email in ['admin@bingo-game.com', 'support@bingo-game.com'];
+    }
+
     // Users: allow each user to read/write their own profile
     match /users/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null && request.auth.uid == userId &&
+                   request.resource.data.keys().hasAll(['email', 'displayName', 'createdAt']);
     }
 
     // Wallets: allow users to read their own wallet, server to write
     match /wallets/{userId} {
       allow read: if request.auth != null && request.auth.uid == userId;
-      allow write: if request.auth != null && request.auth.uid == userId;
+      allow write: if request.auth != null && request.auth.uid == userId &&
+                   request.resource.data.balance >= 0;
       // Allow server operations (no auth context)
       allow write: if request.auth == null;
     }
 
     // Transactions: allow users to read their own, server to write
     match /transactions/{transactionId} {
-      allow read: if request.auth != null && request.auth.uid == resource.data.userId;
-      allow create, update: if request.auth != null && request.auth.uid == request.resource.data.userId;
+      allow read: if request.auth != null && 
+                  (request.auth.uid == resource.data.userId || isAdmin());
+      allow create: if request.auth != null && 
+                    request.auth.uid == request.resource.data.userId &&
+                    request.resource.data.amount > 0;
       // Allow server operations for payment processing
       allow create, update: if request.auth == null;
     }
 
-    // Game rooms: allow authenticated users to read and create
+    // Game rooms: allow authenticated users to read and create with validation
     match /gameRooms/{gameRoomId} {
       allow read: if request.auth != null;
-      allow create, update: if request.auth != null;
+      allow create: if request.auth != null && 
+                    request.auth.uid == request.resource.data.hostId &&
+                    request.resource.data.keys().hasAll(['name', 'hostId', 'entryFee', 'maxPlayers']);
+      allow update: if request.auth != null && 
+                    (request.auth.uid == resource.data.hostId || 
+                     request.auth.uid in resource.data.players.map(p => p.userId));
     }
 
-    // Payments: allow server operations
+    // Payments: allow server operations and user read access
     match /payments/{paymentId} {
-      allow read, write: if request.auth != null;
+      allow read: if request.auth != null && 
+                  (request.auth.uid == resource.data.userId || isAdmin());
       allow write: if request.auth == null;
     }
 
-    // Revenue tracking (admin only)
+    // Revenue tracking (admin and server only)
     match /revenue_tracking/{docId} {
-      allow read, write: if request.auth != null;
+      allow read: if isAdmin();
+      allow write: if request.auth == null || isAdmin();
+    }
+
+    // Daily revenue (admin and server only)
+    match /daily_revenue/{docId} {
+      allow read: if isAdmin();
+      allow write: if request.auth == null || isAdmin();
+    }
+
+    // Add game history collection
+    match /game_history/{gameId} {
+      allow read: if request.auth != null;
       allow write: if request.auth == null;
     }
 
-    // Daily revenue (admin only)
-    match /daily_revenue/{docId} {
-      allow read, write: if request.auth != null;
-      allow write: if request.auth == null;
+    // Add user sessions for better security
+    match /user_sessions/{sessionId} {
+      allow read, write: if request.auth != null && 
+                        request.auth.uid == resource.data.userId;
+      allow delete: if request.auth != null && 
+                    request.auth.uid == resource.data.userId;
     }
   }
 }
