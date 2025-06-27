@@ -65,14 +65,24 @@ const DepositModal: React.FC<DepositModalProps> = ({ onClose, wallet }) => {
       }
 
       // Call backend to initiate Chapa payment
-      const res = await axios.post("/api/wallet/deposit", {
-        userId: auth.currentUser.uid,
-        amount: depositAmount,
+      const chapaPayload = {
+        amount,
+        currency: "ETB",
         email,
-        phone,
         first_name,
         last_name,
-      });
+        phone: phone,
+        userId, // <-- Add this line
+        tx_ref: `deposit-${userId}-${Date.now()}`,
+        callback_url: `${process.env.FRONTEND_URL}/deposit/callback`,
+        return_url: `${process.env.FRONTEND_URL}/wallet`,
+        customization: {
+          title: "Deposit",
+          description: "Deposit to wallet"
+        }
+      };
+
+      const res = await axios.post("/api/wallet/deposit", chapaPayload);
 
       // Redirect user to Chapa payment page
       window.location.href = res.data.checkout_url;

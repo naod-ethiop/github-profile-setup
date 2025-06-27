@@ -164,7 +164,7 @@ def wallet_deposit():
             "callback_url": f"{request.host_url}api/payment-callback",
             "return_url": f"{request.host_url}wallet",
             "customization": {
-                "title": "Deposit to Wallet",
+                "title": "Deposit",  # 7 characters, valid!
                 "description": "Deposit funds to your wallet"
             }
         }
