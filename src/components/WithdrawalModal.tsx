@@ -22,8 +22,20 @@ const WithdrawalModal: React.FC<WithdrawalModalProps> = ({ onClose, wallet }) =>
       return;
     }
 
+    if (withdrawalAmount > 50000) {
+      toast.error('Maximum withdrawal amount is 50,000 ETB');
+      return;
+    }
+
     if (withdrawalAmount > wallet.balance) {
       toast.error('Insufficient balance');
+      return;
+    }
+
+    // Validate phone number format
+    const phoneRegex = /^(\+251|0)[79]\d{8}$/;
+    if (!phoneRegex.test(phoneNumber)) {
+      toast.error('Please enter a valid Ethiopian phone number (e.g., +251912345678 or 0912345678)');
       return;
     }
 
@@ -38,20 +50,39 @@ const WithdrawalModal: React.FC<WithdrawalModalProps> = ({ onClose, wallet }) =>
         body: JSON.stringify({
           userId: auth.currentUser.uid,
           amount: withdrawalAmount,
-          phoneNumber: phoneNumber
+          phoneNumber: phoneNumber,
+          method: 'mobile_money'
         })
       });
 
       const result = await response.json();
 
-      if (result.success) {
-        toast.success('Withdrawal request submitted! It will be processed within 24 hours.');
+      if (response.ok && result.success) {
+        toast.success(`Withdrawal request submitted successfully! 
+          Transaction ID: ${result.transactionId}
+          Processing time: ${result.estimatedTime}
+          You will receive ${formatCurrency(withdrawalAmount)} to ${phoneNumber}`);
+        
+        // Reset form
+        setAmount('');
+        setPhoneNumber('');
         onClose();
       } else {
         throw new Error(result.error || 'Withdrawal request failed');
       }
     } catch (error: any) {
-      toast.error(error.message || 'Withdrawal request failed');
+      console.error('Withdrawal error:', error);
+      
+      // Handle different types of errors
+      if (error.message.includes('Insufficient balance')) {
+        toast.error('Insufficient wallet balance. Please check your available funds.');
+      } else if (error.message.includes('Invalid amount')) {
+        toast.error('Please enter a valid withdrawal amount between 50 and 50,000 ETB.');
+      } else if (error.message.includes('phone')) {
+        toast.error('Please provide a valid phone number for mobile money transfer.');
+      } else {
+        toast.error(error.message || 'Withdrawal request failed. Please try again.');
+      }
     } finally {
       setLoading(false);
     }

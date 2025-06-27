@@ -142,16 +142,13 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({ userId }) => {
   return (
     <div className="space-y-3">
       {transactions.map((transaction) => (
-        <div
-          key={transaction.id}
-          className="bg-white/5 hover:bg-white/10 rounded-lg p-4 transition-colors"
-        >
+        <div key={transaction.id} className="bg-white/5 hover:bg-white/10 rounded-lg p-4 transition-colors">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
               <div className="bg-white/10 p-2 rounded-lg">
                 {getTransactionIcon(transaction.type)}
               </div>
-              
+
               <div>
                 <div className="flex items-center space-x-2">
                   <h4 className="text-white font-semibold">
@@ -164,20 +161,20 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({ userId }) => {
                     </span>
                   </div>
                 </div>
-                
+
                 <p className="text-white/60 text-sm">{transaction.description}</p>
-                
+
                 <div className="flex items-center space-x-4 mt-1">
                   <span className="text-white/40 text-xs">
                     {formatDate(transaction.createdAt)}
                   </span>
-                  
+
                   {transaction.reference && (
                     <span className="text-white/40 text-xs">
                       Ref: {transaction.reference.slice(-8)}
                     </span>
                   )}
-                  
+
                   {transaction.paymentMethod && (
                     <span className="text-white/40 text-xs">
                       via {transaction.paymentMethod.name}
@@ -186,20 +183,20 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({ userId }) => {
                 </div>
               </div>
             </div>
-            
+
             <div className="text-right">
               <div className={`font-bold text-lg ${getAmountColor(transaction.type)}`}>
                 {getAmountPrefix(transaction.type)}{formatCurrency(
                   transaction.metadata?.originalAmount || transaction.amount
                 )}
               </div>
-              
+
               {transaction.metadata?.fee && transaction.metadata.fee > 0 && (
                 <div className="text-white/40 text-xs">
                   Fee: {formatCurrency(transaction.metadata.fee)}
                 </div>
               )}
-              
+
               {transaction.gameId && (
                 <div className="text-white/40 text-xs">
                   Game: {transaction.gameId.slice(-6)}

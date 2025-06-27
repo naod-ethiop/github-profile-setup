@@ -224,24 +224,183 @@ def wallet_deposit():
 @app.route('/api/wallet/withdraw', methods=['POST'])
 def process_withdrawal():
     try:
-        data = request.json
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No JSON data provided'}), 400
+            
+        user_id = data.get('userId')
+        amount = data.get('amount')
+        phone_number = data.get('phoneNumber')
+        withdrawal_method = data.get('method', 'mobile_money')  # mobile_money, bank_transfer
 
-        # In a real app, you would:
-        # 1. Validate the withdrawal request
-        # 2. Check user balance
-        # 3. Process the withdrawal to their account
-        # 4. Update the database
+        print(f"Received withdrawal request: {data}")
 
-        return jsonify({
-            "success": True,
-            "transactionId": f"WTH-{data.get('userId')}-{int(time.time())}",
-            "status": "processing",
-            "message": "Withdrawal request submitted successfully"
-        })
+        # Validate required fields
+        if not all([user_id, amount, phone_number]):
+            return jsonify({'error': 'Missing required fields: userId, amount, phoneNumber'}), 400
+
+        # Validate amount
+        try:
+            amount = float(amount)
+            if amount < 50:
+                return jsonify({'error': 'Minimum withdrawal amount is 50 ETB'}), 400
+            if amount > 50000:
+                return jsonify({'error': 'Maximum withdrawal amount is 50,000 ETB'}), 400
+        except (ValueError, TypeError):
+            return jsonify({'error': 'Invalid amount format'}), 400
+
+        # Check user wallet balance
+        wallet_ref = fs_db.collection('wallets').document(user_id)
+        wallet_doc = wallet_ref.get()
+
+        if not wallet_doc.exists():
+            return jsonify({'error': 'Wallet not found'}), 404
+
+        wallet_data = wallet_doc.to_dict()
+        current_balance = wallet_data.get('balance', 0)
+
+        if current_balance < amount:
+            return jsonify({
+                'error': f'Insufficient balance. Available: {current_balance} ETB, Requested: {amount} ETB'
+            }), 400
+
+        # Create withdrawal transaction
+        tx_ref = f"withdrawal-{user_id}-{int(time.time())}"
+        
+        # Deduct amount from wallet first (reversible if withdrawal fails)
+        try:
+            wallet_ref.update({
+                "balance": firestore.Increment(-amount),
+                "updatedAt": firestore.SERVER_TIMESTAMP
+            })
+
+            # Create transaction record
+            fs_db.collection('transactions').document(tx_ref).set({
+                "userId": user_id,
+                "amount": amount,
+                "type": "withdrawal",
+                "status": "pending",
+                "method": withdrawal_method,
+                "phoneNumber": phone_number,
+                "createdAt": firestore.SERVER_TIMESTAMP,
+                "description": f"Withdrawal via {withdrawal_method}",
+                "estimatedProcessingTime": "24 hours"
+            })
+
+            # In a production environment, here you would:
+            # 1. Integrate with mobile money API (like M-Pesa, Telebirr)
+            # 2. Process bank transfers
+            # 3. Update transaction status based on external API response
+
+            # For now, we'll simulate processing
+            process_withdrawal_simulation(tx_ref, user_id, amount, phone_number)
+
+            return jsonify({
+                "success": True,
+                "transactionId": tx_ref,
+                "status": "pending",
+                "message": "Withdrawal request submitted successfully. Processing within 24 hours.",
+                "estimatedTime": "24 hours",
+                "amount": amount,
+                "method": withdrawal_method
+            })
+
+        except Exception as e:
+            # If transaction creation fails, restore the wallet balance
+            try:
+                wallet_ref.update({
+                    "balance": firestore.Increment(amount),
+                    "updatedAt": firestore.SERVER_TIMESTAMP
+                })
+            except:
+                pass  # Log this error in production
+            
+            raise e
 
     except Exception as e:
         print(f"Withdrawal error: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({'error': f'Withdrawal processing failed: {str(e)}'}), 500
+
+
+def process_withdrawal_simulation(tx_ref, user_id, amount, phone_number):
+    """
+    Simulate withdrawal processing. In production, this would integrate with:
+    - Telebirr API
+    - M-Pesa API
+    - Bank transfer APIs
+    - Other mobile money providers
+    """
+    try:
+        # Simulate processing delay (in production this would be async)
+        import threading
+        import time as time_module
+        
+        def simulate_processing():
+            # Wait 30 seconds to simulate processing
+            time_module.sleep(30)
+            
+            try:
+                # Update transaction status to completed (90% success rate simulation)
+                import random
+                success = random.random() > 0.1  # 90% success rate
+                
+                if success:
+                    fs_db.collection('transactions').document(tx_ref).update({
+                        "status": "completed",
+                        "completedAt": firestore.SERVER_TIMESTAMP,
+                        "processingNote": "Successfully transferred to mobile money account"
+                    })
+                    
+                    # Track successful withdrawal
+                    track_withdrawal_analytics(user_id, amount, "completed")
+                    
+                else:
+                    # Failed withdrawal - refund the amount
+                    fs_db.collection('transactions').document(tx_ref).update({
+                        "status": "failed",
+                        "failedAt": firestore.SERVER_TIMESTAMP,
+                        "failureReason": "Mobile money transfer failed - account verification required"
+                    })
+                    
+                    # Refund to wallet
+                    wallet_ref = fs_db.collection('wallets').document(user_id)
+                    wallet_ref.update({
+                        "balance": firestore.Increment(amount),
+                        "updatedAt": firestore.SERVER_TIMESTAMP
+                    })
+                    
+                    track_withdrawal_analytics(user_id, amount, "failed")
+                    
+            except Exception as e:
+                print(f"Withdrawal simulation error: {str(e)}")
+        
+        # Start background processing
+        thread = threading.Thread(target=simulate_processing)
+        thread.daemon = True
+        thread.start()
+        
+    except Exception as e:
+        print(f"Withdrawal simulation setup error: {str(e)}")
+
+
+def track_withdrawal_analytics(user_id, amount, status):
+    """Track withdrawal analytics"""
+    try:
+        withdrawal_data = {
+            "type": "withdrawal",
+            "amount": amount,
+            "userId": user_id,
+            "status": status,
+            "timestamp": firestore.SERVER_TIMESTAMP,
+            "date": time.strftime("%Y-%m-%d"),
+            "month": time.strftime("%Y-%m"),
+            "year": time.strftime("%Y")
+        }
+        
+        fs_db.collection('withdrawal_analytics').add(withdrawal_data)
+        
+    except Exception as e:
+        print(f"Withdrawal analytics error: {str(e)}")
 
 
 @app.route('/api/payment-callback', methods=['GET', 'POST'])
@@ -360,6 +519,36 @@ def process_game_entry_payment(user_id, game_id, amount, tx_ref):
         print(f"Game entry payment error: {str(e)}")
 
 
+@app.route('/api/wallet/withdrawal-status/<tx_ref>', methods=['GET'])
+def check_withdrawal_status(tx_ref):
+    """Check the status of a withdrawal transaction"""
+    try:
+        transaction_ref = fs_db.collection('transactions').document(tx_ref)
+        transaction_doc = transaction_ref.get()
+        
+        if not transaction_doc.exists():
+            return jsonify({'error': 'Transaction not found'}), 404
+            
+        transaction_data = transaction_doc.to_dict()
+        
+        # Convert timestamps to strings
+        if 'createdAt' in transaction_data and transaction_data['createdAt']:
+            transaction_data['createdAt'] = transaction_data['createdAt'].isoformat()
+        if 'completedAt' in transaction_data and transaction_data['completedAt']:
+            transaction_data['completedAt'] = transaction_data['completedAt'].isoformat()
+        if 'failedAt' in transaction_data and transaction_data['failedAt']:
+            transaction_data['failedAt'] = transaction_data['failedAt'].isoformat()
+            
+        return jsonify({
+            "transaction": transaction_data,
+            "status": transaction_data.get('status', 'unknown')
+        })
+        
+    except Exception as e:
+        print(f"Withdrawal status check error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/api/verify-payment/<tx_ref>', methods=['GET'])
 def verify_payment(tx_ref):
     headers = {"Authorization": f"Bearer {CHAPA_SECRET}"}
@@ -418,6 +607,39 @@ def get_revenue_analytics():
         
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.route('/api/wallet/withdrawal-history/<user_id>', methods=['GET'])
+def get_withdrawal_history(user_id):
+    """Get withdrawal history for a user"""
+    try:
+        # Get user's withdrawal transactions
+        transactions_ref = fs_db.collection('transactions')
+        query = transactions_ref.where('userId', '==', user_id).where('type', '==', 'withdrawal').order_by('createdAt', direction=firestore.Query.DESCENDING).limit(50)
+        
+        withdrawals = []
+        for doc in query.stream():
+            withdrawal_data = doc.to_dict()
+            withdrawal_data['id'] = doc.id
+            
+            # Convert Firestore timestamps to strings
+            if 'createdAt' in withdrawal_data and withdrawal_data['createdAt']:
+                withdrawal_data['createdAt'] = withdrawal_data['createdAt'].isoformat()
+            if 'completedAt' in withdrawal_data and withdrawal_data['completedAt']:
+                withdrawal_data['completedAt'] = withdrawal_data['completedAt'].isoformat()
+            if 'failedAt' in withdrawal_data and withdrawal_data['failedAt']:
+                withdrawal_data['failedAt'] = withdrawal_data['failedAt'].isoformat()
+                
+            withdrawals.append(withdrawal_data)
+        
+        return jsonify({
+            "withdrawals": withdrawals,
+            "total_count": len(withdrawals)
+        })
+        
+    except Exception as e:
+        print(f"Withdrawal history error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route('/api/admin/game-stats', methods=['GET'])
 def get_game_statistics():
