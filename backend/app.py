@@ -31,7 +31,7 @@ try:
         cred = credentials.Certificate(service_account_info)
     else:
         # Fallback to JSON file
-        cred = credentials.Certificate("backend/serviceAccountkey.json")
+        cred = credentials.Certificate("backend/serviceAccountKey.json")
     
     firebase_admin.initialize_app(cred)
     fs_db = firestore.client()
