@@ -8,6 +8,7 @@ channel = "stable-24_05"
 run = ["sh", "-c", "npm run dev"]
 
 [workflows]
+runButton = "Start Full Stack"
 
 [[workflows.workflow]]
 name = "Start Backend"
@@ -26,6 +27,19 @@ mode = "sequential"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "cd backend && python app.py"
+
+[[workflows.workflow]]
+name = "Start Full Stack"
+author = 25968941
+mode = "parallel"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd backend && pip install -r requirements.txt && python app.py"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm run dev"
 
 [[ports]]
 localPort = 5000
