@@ -180,23 +180,47 @@ def payment_callback():
         data = request.json if request.method == 'POST' else request.args
         print("Received Chapa callback:", data)
 
-        # Example: Extract tx_ref, userId, amount from callback or your DB
+        # Extract tx_ref and status from callback
         tx_ref = data.get('tx_ref')
         status = data.get('status')
         amount = float(data.get('amount', 0))
-        user_id = data.get('userId')  # You may need to map tx_ref to userId in your DB
 
-        if status == "success":
-            # Update transaction status
-            fs_db.collection('transactions').document(tx_ref).set({
-                "status": "completed"
-            }, merge=True)
+        if status == "success" and tx_ref:
+            # First, get the transaction to find the userId
+            transaction_ref = fs_db.collection('transactions').document(tx_ref)
+            transaction_doc = transaction_ref.get()
+            
+            if transaction_doc.exists():
+                transaction_data = transaction_doc.to_dict()
+                user_id = transaction_data.get('userId')
+                
+                if user_id:
+                    # Update transaction status
+                    transaction_ref.update({
+                        "status": "completed",
+                        "completedAt": firestore.SERVER_TIMESTAMP
+                    })
 
-            # Increment wallet balance
-            wallet_ref = fs_db.collection('wallets').document(user_id)
-            wallet_ref.update({
-                "balance": firestore.Increment(amount)
-            })
+                    # Create or update wallet balance
+                    wallet_ref = fs_db.collection('wallets').document(user_id)
+                    wallet_doc = wallet_ref.get()
+                    
+                    if wallet_doc.exists():
+                        # Update existing wallet
+                        wallet_ref.update({
+                            "balance": firestore.Increment(amount),
+                            "updatedAt": firestore.SERVER_TIMESTAMP
+                        })
+                    else:
+                        # Create new wallet
+                        wallet_ref.set({
+                            "userId": user_id,
+                            "balance": amount,
+                            "currency": "ETB",
+                            "status": "active",
+                            "createdAt": firestore.SERVER_TIMESTAMP,
+                            "updatedAt": firestore.SERVER_TIMESTAMP
+                        })
 
         return jsonify({"message": "Payment callback processed"}), 200
 
