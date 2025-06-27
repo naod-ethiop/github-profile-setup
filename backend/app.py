@@ -10,13 +10,19 @@ from firebase_admin import credentials, firestore
 
 load_dotenv()
 app = Flask(__name__)
-CORS(app, origins=['*'], allow_headers=['Content-Type', 'Authorization'])
+CORS(app, origins=['*'], allow_headers=['Content-Type', 'Authorization'], supports_credentials=True)
 
 CHAPA_SECRET = os.getenv("CHAPA_SECRET_KEY")
 
-cred = credentials.Certificate("serviceAccountkey.json")  # Update path if needed
-firebase_admin.initialize_app(cred)
-fs_db = firestore.client()
+try:
+    cred = credentials.Certificate("serviceAccountkey.json")
+    firebase_admin.initialize_app(cred)
+    fs_db = firestore.client()
+    print("Firebase initialized successfully")
+except Exception as e:
+    print(f"Firebase initialization error: {e}")
+    # Create a mock client for development
+    fs_db = None
 
 
 @app.route('/api/update-user', methods=['POST'])
@@ -316,6 +322,10 @@ def verify_payment(tx_ref):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+@app.route('/', methods=['GET'])
+def root():
+    return jsonify({"message": "Bingo Game Backend API", "status": "running"})
 
 @app.route('/health', methods=['GET'])
 def health_check():
