@@ -110,8 +110,8 @@ def wallet_deposit():
         "last_name": last_name,
         "phone_number": phone,  # <-- Pass phone to Chapa
         "tx_ref": tx_ref,
-        "callback_url": "https://73db-196-190-131-11.ngrok-free.app/api/payment-callback",
-        "return_url": "http://localhost:5173/wallet",
+        "callback_url": f"{request.host_url}api/payment-callback",
+        "return_url": f"{request.host_url}wallet",
         "customization": {
             "title": "Deposit to Wallet",
             "description": "Deposit funds to your wallet"
@@ -189,11 +189,11 @@ def payment_callback():
             # First, get the transaction to find the userId
             transaction_ref = fs_db.collection('transactions').document(tx_ref)
             transaction_doc = transaction_ref.get()
-            
+
             if transaction_doc.exists():
                 transaction_data = transaction_doc.to_dict()
                 user_id = transaction_data.get('userId')
-                
+
                 if user_id:
                     # Update transaction status
                     transaction_ref.update({
@@ -204,7 +204,7 @@ def payment_callback():
                     # Create or update wallet balance
                     wallet_ref = fs_db.collection('wallets').document(user_id)
                     wallet_doc = wallet_ref.get()
-                    
+
                     if wallet_doc.exists():
                         # Update existing wallet
                         wallet_ref.update({

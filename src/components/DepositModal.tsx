@@ -65,7 +65,7 @@ const DepositModal: React.FC<DepositModalProps> = ({ onClose, wallet }) => {
       }
 
       // Call backend to initiate Chapa payment
-      const res = await axios.post("http://localhost:5000/api/wallet/deposit", {
+      const res = await axios.post("/api/wallet/deposit", {
         userId: auth.currentUser.uid,
         amount: depositAmount,
         email,
