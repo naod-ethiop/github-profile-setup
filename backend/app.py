@@ -13,6 +13,13 @@ app = Flask(__name__)
 CORS(app, origins=['*'], allow_headers=['Content-Type', 'Authorization'], supports_credentials=True)
 
 CHAPA_SECRET = os.getenv("CHAPA_SECRET_KEY")
+CHAPA_PUBLIC_KEY = os.getenv("CHAPA_PUBLIC_KEY")
+CHAPA_BASE_URL = os.getenv("CHAPA_BASE_URL", "https://api.chapa.co/v1")
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+
+print(f"Environment: {ENVIRONMENT}")
+print(f"Chapa Secret Key configured: {'Yes' if CHAPA_SECRET else 'No'}")
+print(f"Using Chapa Base URL: {CHAPA_BASE_URL}")
 
 try:
     # Try to use environment variable first, fallback to JSON file
@@ -167,18 +174,33 @@ def wallet_deposit():
             "Content-Type": "application/json"
         }
 
+        print(f"Sending request to Chapa: {CHAPA_BASE_URL}/transaction/initialize")
+        print(f"Payload: {payload}")
+        print(f"Headers: {headers}")
+
         response = requests.post(
-            "https://api.chapa.co/v1/transaction/initialize",
+            f"{CHAPA_BASE_URL}/transaction/initialize",
             json=payload,
-            headers=headers
+            headers=headers,
+            timeout=30
         )
 
+        print(f"Chapa Response Status: {response.status_code}")
+        print(f"Chapa Response Body: {response.text}")
+
         if response.status_code != 200:
-            return jsonify({'error': 'Chapa API error', 'details': response.text}), 500
+            error_message = f"Chapa API error (Status: {response.status_code})"
+            try:
+                error_json = response.json()
+                error_message += f" - {error_json.get('message', 'Unknown error')}"
+            except:
+                error_message += f" - {response.text}"
+            return jsonify({'error': error_message}), 500
 
         resp_json = response.json()
         if resp_json.get('status') != 'success':
-            return jsonify({'error': 'Chapa error', 'details': resp_json}), 500
+            error_message = resp_json.get('message', 'Unknown Chapa error')
+            return jsonify({'error': f'Chapa error: {error_message}', 'details': resp_json}), 500
 
         # After creating tx_ref in /api/wallet/deposit
         fs_db.collection('transactions').document(tx_ref).set({
@@ -344,8 +366,11 @@ def verify_payment(tx_ref):
 
     try:
         response = requests.get(
-            f"https://api.chapa.co/v1/transaction/verify/{tx_ref}",
-            headers=headers)
+            f"{CHAPA_BASE_URL}/transaction/verify/{tx_ref}",
+            headers=headers,
+            timeout=30)
+        
+        print(f"Verification response: Status {response.status_code}, Body: {response.text}")
         return jsonify(response.json())
     except Exception as e:
         return jsonify({"error": str(e)}), 500
