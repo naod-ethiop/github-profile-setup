@@ -120,13 +120,17 @@ def wallet_deposit():
 
         print(f"Received deposit request: {data}")  # Debug log
 
-        # Validate required fields
-        if not all([amount, email, first_name, last_name, user_id, phone]):
+        # Validate required fields (last_name can be empty)
+        if not all([amount, email, first_name, user_id, phone]):
             missing_fields = [field for field, value in [
                 ('amount', amount), ('email', email), ('first_name', first_name),
-                ('last_name', last_name), ('userId', user_id), ('phone', phone)
+                ('userId', user_id), ('phone', phone)
             ] if not value]
             return jsonify({'error': f'Missing required fields: {missing_fields}'}), 400
+        
+        # Provide default for last_name if empty
+        if not last_name:
+            last_name = "Player"
 
         # Validate amount
         try:

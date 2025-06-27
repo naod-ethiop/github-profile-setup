@@ -56,7 +56,7 @@ const DepositModal: React.FC<DepositModalProps> = ({ onClose, wallet }) => {
       const email = auth.currentUser.email;
       const displayName = auth.currentUser.displayName || "";
       const first_name = displayName.split(" ")[0] || "User";
-      const last_name = displayName.split(" ")[1] || "";
+      const last_name = displayName.split(" ")[1] || "Player";
 
       if (!phone || !email) {
         toast.error("Missing phone or email in your profile.");
