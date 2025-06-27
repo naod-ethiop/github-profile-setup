@@ -10,7 +10,7 @@ from firebase_admin import credentials, firestore
 
 load_dotenv()
 app = Flask(__name__)
-CORS(app)
+CORS(app, origins=['*'], allow_headers=['Content-Type', 'Authorization'])
 
 CHAPA_SECRET = os.getenv("CHAPA_SECRET_KEY")
 
@@ -90,16 +90,26 @@ def create_payment():
 
 @app.route('/api/wallet/deposit', methods=['POST'])
 def wallet_deposit():
-    data = request.get_json()
-    amount = data.get('amount')
-    email = data.get('email')
-    first_name = data.get('first_name')
-    last_name = data.get('last_name')
-    user_id = data.get('userId')
-    phone = data.get('phone')  # <-- Accept phone
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No JSON data provided'}), 400
+            
+        amount = data.get('amount')
+        email = data.get('email')
+        first_name = data.get('first_name')
+        last_name = data.get('last_name')
+        user_id = data.get('userId')
+        phone = data.get('phone')  # <-- Accept phone
 
-    if not all([amount, email, first_name, last_name, user_id, phone]):
-        return jsonify({'error': 'Missing required fields'}), 400
+        print(f"Received deposit request: {data}")  # Debug log
+
+        if not all([amount, email, first_name, last_name, user_id, phone]):
+            missing_fields = [field for field, value in [
+                ('amount', amount), ('email', email), ('first_name', first_name),
+                ('last_name', last_name), ('userId', user_id), ('phone', phone)
+            ] if not value]
+            return jsonify({'error': f'Missing required fields: {missing_fields}'}), 400
 
     tx_ref = f"deposit-{user_id}-{int(time.time())}"
     payload = {
@@ -149,6 +159,10 @@ def wallet_deposit():
         "checkout_url": resp_json['data']['checkout_url'],
         "tx_ref": tx_ref
     })
+
+    except Exception as e:
+        print(f"Deposit error: {str(e)}")
+        return jsonify({'error': f'Internal server error: {str(e)}'}), 500
 
 
 @app.route('/api/wallet/withdraw', methods=['POST'])
@@ -245,6 +259,10 @@ def verify_payment(tx_ref):
 @app.route('/health', methods=['GET'])
 def health_check():
     return jsonify({"status": "healthy", "service": "bingo-backend"})
+
+@app.route('/api/test', methods=['GET'])
+def test_api():
+    return jsonify({"message": "API is working", "timestamp": time.time()})
 
 
 if __name__ == '__main__':
