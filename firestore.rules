@@ -11,16 +11,18 @@ service cloud.firestore {
     // Users: allow each user to read/write their own profile
     match /users/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
-      allow create: if request.auth != null && request.auth.uid == userId &&
+      allow create: if request.auth != null && 
+                   request.auth.uid == userId &&
                    request.resource.data.keys().hasAll(['email', 'displayName', 'createdAt']);
     }
 
     // Wallets: allow users to read their own wallet, server to write
     match /wallets/{userId} {
       allow read: if request.auth != null && request.auth.uid == userId;
-      allow write: if request.auth != null && request.auth.uid == userId &&
+      allow write: if request.auth != null && 
+                   request.auth.uid == userId &&
                    request.resource.data.balance >= 0;
-      // Allow server operations (no auth context)
+      // Allow server operations (no auth context) - be careful with this in production
       allow write: if request.auth == null;
     }
 
@@ -43,7 +45,7 @@ service cloud.firestore {
                     request.resource.data.keys().hasAll(['name', 'hostId', 'entryFee', 'maxPlayers']);
       allow update: if request.auth != null && 
                     (request.auth.uid == resource.data.hostId || 
-                     request.auth.uid in resource.data.players.map(p => p.userId));
+                     request.auth.uid in resource.data.get('players', []).map(['userId'], path => path.get(['userId'])));
     }
 
     // Payments: allow server operations and user read access
@@ -65,13 +67,13 @@ service cloud.firestore {
       allow write: if request.auth == null || isAdmin();
     }
 
-    // Add game history collection
+    // Game history collection
     match /game_history/{gameId} {
       allow read: if request.auth != null;
       allow write: if request.auth == null;
     }
 
-    // Add user sessions for better security
+    // User sessions for better security
     match /user_sessions/{sessionId} {
       allow read, write: if request.auth != null && 
                         request.auth.uid == resource.data.userId;
