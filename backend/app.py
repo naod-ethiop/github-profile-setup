@@ -111,54 +111,54 @@ def wallet_deposit():
             ] if not value]
             return jsonify({'error': f'Missing required fields: {missing_fields}'}), 400
 
-    tx_ref = f"deposit-{user_id}-{int(time.time())}"
-    payload = {
-        "amount": str(amount),
-        "currency": "ETB",
-        "email": email,
-        "first_name": first_name,
-        "last_name": last_name,
-        "phone_number": phone,  # <-- Pass phone to Chapa
-        "tx_ref": tx_ref,
-        "callback_url": f"{request.host_url}api/payment-callback",
-        "return_url": f"{request.host_url}wallet",
-        "customization": {
-            "title": "Deposit to Wallet",
-            "description": "Deposit funds to your wallet"
+        tx_ref = f"deposit-{user_id}-{int(time.time())}"
+        payload = {
+            "amount": str(amount),
+            "currency": "ETB",
+            "email": email,
+            "first_name": first_name,
+            "last_name": last_name,
+            "phone_number": phone,  # <-- Pass phone to Chapa
+            "tx_ref": tx_ref,
+            "callback_url": f"{request.host_url}api/payment-callback",
+            "return_url": f"{request.host_url}wallet",
+            "customization": {
+                "title": "Deposit to Wallet",
+                "description": "Deposit funds to your wallet"
+            }
         }
-    }
 
-    headers = {
-        "Authorization": f"Bearer {CHAPA_SECRET}",
-        "Content-Type": "application/json"
-    }
+        headers = {
+            "Authorization": f"Bearer {CHAPA_SECRET}",
+            "Content-Type": "application/json"
+        }
 
-    response = requests.post(
-        "https://api.chapa.co/v1/transaction/initialize",
-        json=payload,
-        headers=headers
-    )
+        response = requests.post(
+            "https://api.chapa.co/v1/transaction/initialize",
+            json=payload,
+            headers=headers
+        )
 
-    if response.status_code != 200:
-        return jsonify({'error': 'Chapa API error', 'details': response.text}), 500
+        if response.status_code != 200:
+            return jsonify({'error': 'Chapa API error', 'details': response.text}), 500
 
-    resp_json = response.json()
-    if resp_json.get('status') != 'success':
-        return jsonify({'error': 'Chapa error', 'details': resp_json}), 500
+        resp_json = response.json()
+        if resp_json.get('status') != 'success':
+            return jsonify({'error': 'Chapa error', 'details': resp_json}), 500
 
-    # After creating tx_ref in /api/wallet/deposit
-    fs_db.collection('transactions').document(tx_ref).set({
-        "userId": user_id,
-        "amount": float(amount),
-        "status": "pending",
-        "createdAt": firestore.SERVER_TIMESTAMP,
-        "type": "deposit"
-    })
+        # After creating tx_ref in /api/wallet/deposit
+        fs_db.collection('transactions').document(tx_ref).set({
+            "userId": user_id,
+            "amount": float(amount),
+            "status": "pending",
+            "createdAt": firestore.SERVER_TIMESTAMP,
+            "type": "deposit"
+        })
 
-    return jsonify({
-        "checkout_url": resp_json['data']['checkout_url'],
-        "tx_ref": tx_ref
-    })
+        return jsonify({
+            "checkout_url": resp_json['data']['checkout_url'],
+            "tx_ref": tx_ref
+        })
 
     except Exception as e:
         print(f"Deposit error: {str(e)}")
