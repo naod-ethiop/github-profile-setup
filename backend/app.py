@@ -22,23 +22,23 @@ print(f"Chapa Secret Key configured: {'Yes' if CHAPA_SECRET else 'No'}")
 print(f"Using Chapa Base URL: {CHAPA_BASE_URL}")
 
 try:
-    # Try to use environment variable first, fallback to JSON file
     service_account_key = os.getenv("FIREBASE_SERVICE_ACCOUNT_KEY")
     if service_account_key:
-        # Parse the JSON string from environment variable
         import json
         service_account_info = json.loads(service_account_key)
         cred = credentials.Certificate(service_account_info)
     else:
-        # Fallback to JSON file
-        cred = credentials.Certificate("backend/serviceAccountKey.json")
+        # Try both possible filenames
+        try:
+            cred = credentials.Certificate("backend/serviceAccountKey.json")
+        except FileNotFoundError:
+            cred = credentials.Certificate("backend/serviceAccountkey.json")
     
     firebase_admin.initialize_app(cred)
     fs_db = firestore.client()
     print("Firebase initialized successfully")
 except Exception as e:
     print(f"Firebase initialization error: {e}")
-    # Create a mock client for development
     fs_db = None
 
 
@@ -66,7 +66,7 @@ def update_user():
     return jsonify({
         "success": True,
         "message": "User updated successfully"
-    }), 200
+    }, 200)
 
 
 @app.route('/api/create-payment', methods=['POST'])
