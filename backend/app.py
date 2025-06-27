@@ -15,7 +15,17 @@ CORS(app, origins=['*'], allow_headers=['Content-Type', 'Authorization'], suppor
 CHAPA_SECRET = os.getenv("CHAPA_SECRET_KEY")
 
 try:
-    cred = credentials.Certificate("serviceAccountkey.json")
+    # Try to use environment variable first, fallback to JSON file
+    service_account_key = os.getenv("FIREBASE_SERVICE_ACCOUNT_KEY")
+    if service_account_key:
+        # Parse the JSON string from environment variable
+        import json
+        service_account_info = json.loads(service_account_key)
+        cred = credentials.Certificate(service_account_info)
+    else:
+        # Fallback to JSON file
+        cred = credentials.Certificate("backend/serviceAccountkey.json")
+    
     firebase_admin.initialize_app(cred)
     fs_db = firestore.client()
     print("Firebase initialized successfully")
