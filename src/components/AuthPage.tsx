@@ -4,15 +4,18 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   updateProfile,
+  sendPasswordResetEmail,
 } from "firebase/auth";
 import { auth } from "../firebase/config";
-import { Mail, Lock, User, Trophy } from "lucide-react";
+import { Mail, Lock, User, Trophy, ArrowLeft } from "lucide-react";
 import toast from "react-hot-toast";
 import { doc, setDoc } from "firebase/firestore";
 import { db } from "../firebase/config";
 
 const AuthPage: React.FC = () => {
   const [isLogin, setIsLogin] = useState(true);
+  const [showResetPassword, setShowResetPassword] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
   const [formData, setFormData] = useState({
     email: "",
     password: "",
@@ -67,6 +70,68 @@ const AuthPage: React.FC = () => {
       [e.target.name]: e.target.value,
     }));
   };
+
+  const handlePasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resetEmail) {
+      toast.error("Please enter your email address");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await sendPasswordResetEmail(auth, resetEmail);
+      toast.success("Password reset email sent! Check your inbox.");
+      setShowResetPassword(false);
+      setResetEmail("");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to send reset email");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (showResetPassword) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="max-w-md w-full">
+          <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-8 border border-white/20">
+            <div className="flex items-center mb-6">
+              <button
+                onClick={() => setShowResetPassword(false)}
+                className="text-white/80 hover:text-white transition-colors mr-4"
+              >
+                <ArrowLeft className="w-6 h-6" />
+              </button>
+              <h2 className="text-2xl font-bold text-white">Reset Password</h2>
+            </div>
+
+            <form onSubmit={handlePasswordReset} className="space-y-4">
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-white/60 w-5 h-5" />
+                <input
+                  type="email"
+                  placeholder="Enter your email address"
+                  value={resetEmail}
+                  onChange={(e) => setResetEmail(e.target.value)}
+                  required
+                  className="w-full pl-12 pr-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/60 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white py-3 px-4 rounded-lg font-semibold transition-all disabled:opacity-50"
+              >
+                {loading ? "Sending..." : "Send Reset Email"}
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
@@ -193,6 +258,17 @@ const AuthPage: React.FC = () => {
               {isLogin ? "Sign up here" : "Sign in here"}
             </button>
           </div>
+
+          {isLogin && (
+            <div className="mt-4 text-center">
+              <button
+                onClick={() => setShowResetPassword(true)}
+                className="text-blue-400 hover:text-blue-300 text-sm font-semibold"
+              >
+                Forgot your password?
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Features */}

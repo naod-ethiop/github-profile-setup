@@ -10,6 +10,7 @@ import PaymentPage from './components/PaymentPage';
 import WalletPage from './components/WalletPage';
 import GameList from './components/GameList';
 import { GameProvider } from './contexts/GameContext';
+import WelcomePage from './components/WelcomePage';
 
 
 function App() {
@@ -17,10 +18,17 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [showGameList, setShowGameList] = useState(false);
   const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
+  const [showWelcome, setShowWelcome] = useState(false);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUser(user);
+
+      // Check if user needs to see welcome page
+      if (user && !localStorage.getItem('welcomeCompleted')) {
+        setShowWelcome(true);
+      }
+
       setLoading(false);
     });
 
@@ -39,6 +47,24 @@ function App() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center">
         <div className="text-white text-xl">Loading...</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">
+        <AuthPage />
+        <Toaster position="top-right" />
+      </div>
+    );
+  }
+
+  if (showWelcome) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">
+        <WelcomePage onComplete={() => setShowWelcome(false)} />
+        <Toaster position="top-right" />
       </div>
     );
   }

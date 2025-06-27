@@ -52,7 +52,7 @@ class GameService {
     const docRef = await addDoc(collection(db, 'gameRooms'), {
       ...gameRoom
     });
-    
+
     return docRef.id;
   }
 
@@ -61,7 +61,7 @@ class GameService {
     await updateDoc(gameRoomRef, {
       players: arrayUnion(player),
       prizePool: increment(0) 
-   
+
     });
   }
 
@@ -145,7 +145,7 @@ class GameService {
           numbers.push(num);
         }
       }
-      
+
       card[letter as keyof typeof BINGO_RANGES] = numbers.map((num, index) => ({
         number: letter === 'N' && index === 2 ? 0 : num, // Free space
         marked: letter === 'N' && index === 2, // Free space is pre-marked
@@ -157,34 +157,76 @@ class GameService {
   }
 
   // Win Detection
-  checkWin(card: BingoCard): { hasWon: boolean; pattern?: string } {
-    const columns = Object.keys(card).filter(key => key !== 'id' && key !== 'playerId') as (keyof Omit<BingoCard, 'id' | 'playerId'>)[];
-    const grid = columns.map(col => card[col]);
-    
-    // Check rows
+  checkWin(card: BingoCard): { hasWon: boolean; pattern?: string; winType?: 'line' | 'fullhouse' | 'corners' | 'center_cross' } {
+    const columns = ['B', 'I', 'N', 'G', 'O'] as const;
+
+    // Check columns (vertical lines)
+    for (let col of columns) {
+      if (card[col].every(cell => cell.marked)) {
+        return { hasWon: true, pattern: `${col} Column`, winType: 'line' };
+      }
+    }
+
+    // Check rows (horizontal lines)
     for (let row = 0; row < 5; row++) {
-      if (grid.every(col => col[row].marked)) {
-        return { hasWon: true, pattern: 'Row' };
+      if (columns.every(col => card[col][row].marked)) {
+        return { hasWon: true, pattern: `Row ${row + 1}`, winType: 'line' };
       }
     }
-    
-    // Check columns
-    for (let col = 0; col < 5; col++) {
-      if (grid[col].every(square => square.marked)) {
-        return { hasWon: true, pattern: 'Column' };
-      }
-    }
-    
+
     // Check diagonals
-    if (grid.every((col, index) => col[index].marked)) {
-      return { hasWon: true, pattern: 'Diagonal' };
+    if (columns.every((col, index) => card[col][index].marked)) {
+      return { hasWon: true, pattern: 'Diagonal (\\)', winType: 'line' };
     }
-    
-    if (grid.every((col, index) => col[4 - index].marked)) {
-      return { hasWon: true, pattern: 'Diagonal' };
+
+    if (columns.every((col, index) => card[col][4 - index].marked)) {
+      return { hasWon: true, pattern: 'Diagonal (/)', winType: 'line' };
     }
-    
+
+    // Check four corners
+    if (card.B[0].marked && card.O[0].marked && card.B[4].marked && card.O[4].marked) {
+      return { hasWon: true, pattern: 'Four Corners', winType: 'corners' };
+    }
+
+    // Check center cross pattern
+    const centerCross = [
+      card.N[0].marked, card.N[1].marked, card.N[2].marked, card.N[3].marked, card.N[4].marked, // Middle column
+      card.B[2].marked, card.I[2].marked, card.G[2].marked, card.O[2].marked // Middle row (excluding center)
+    ].every(marked => marked);
+
+    if (centerCross) {
+      return { hasWon: true, pattern: 'Center Cross', winType: 'center_cross' };
+    }
+
+    // Check full house (all numbers marked)
+    const allMarked = columns.every(col => card[col].every(cell => cell.marked));
+    if (allMarked) {
+      return { hasWon: true, pattern: 'Full House', winType: 'fullhouse' };
+    }
+
+    // Check blackout patterns (various patterns for different game modes)
+    const edgePattern = this.checkEdgePattern(card);
+    if (edgePattern) {
+      return { hasWon: true, pattern: 'Edge Pattern', winType: 'line' };
+    }
+
     return { hasWon: false };
+  }
+
+  private checkEdgePattern(card: BingoCard): boolean {
+    const columns = ['B', 'I', 'N', 'G', 'O'] as const;
+    const edges = [
+      // Top row
+      ...columns.map(col => card[col][0].marked),
+      // Bottom row
+      ...columns.map(col => card[col][4].marked),
+      // Left column (excluding corners)
+      card.B[1].marked, card.B[2].marked, card.B[3].marked,
+      // Right column (excluding corners)
+      card.O[1].marked, card.O[2].marked, card.O[3].marked
+    ];
+
+    return edges.every(marked => marked);
   }
 
   // Real-time subscriptions
@@ -203,7 +245,7 @@ class GameService {
       where('status', 'in', ['waiting', 'starting', 'playing']),
       orderBy('createdAt', 'desc')
     );
-    
+
     return onSnapshot(q, (snapshot) => {
       const gameRooms = snapshot.docs.map(doc => ({
         id: doc.id,

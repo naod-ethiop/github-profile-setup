@@ -207,40 +207,101 @@ def payment_callback():
             if transaction_doc.exists():
                 transaction_data = transaction_doc.to_dict()
                 user_id = transaction_data.get('userId')
+                transaction_type = transaction_data.get('type', 'deposit')
 
                 if user_id:
                     # Update transaction status
                     transaction_ref.update({
                         "status": "completed",
-                        "completedAt": firestore.SERVER_TIMESTAMP
+                        "completedAt": firestore.SERVER_TIMESTAMP,
+                        "chapaResponse": data
                     })
 
-                    # Create or update wallet balance
-                    wallet_ref = fs_db.collection('wallets').document(user_id)
-                    wallet_doc = wallet_ref.get()
+                    if transaction_type == 'deposit':
+                        # Handle deposit - add to wallet
+                        wallet_ref = fs_db.collection('wallets').document(user_id)
+                        wallet_doc = wallet_ref.get()
 
-                    if wallet_doc.exists():
-                        # Update existing wallet
-                        wallet_ref.update({
-                            "balance": firestore.Increment(amount),
-                            "updatedAt": firestore.SERVER_TIMESTAMP
-                        })
-                    else:
-                        # Create new wallet
-                        wallet_ref.set({
-                            "userId": user_id,
-                            "balance": amount,
-                            "currency": "ETB",
-                            "status": "active",
-                            "createdAt": firestore.SERVER_TIMESTAMP,
-                            "updatedAt": firestore.SERVER_TIMESTAMP
-                        })
+                        if wallet_doc.exists():
+                            # Update existing wallet
+                            wallet_ref.update({
+                                "balance": firestore.Increment(amount),
+                                "updatedAt": firestore.SERVER_TIMESTAMP
+                            })
+                        else:
+                            # Create new wallet
+                            wallet_ref.set({
+                                "userId": user_id,
+                                "balance": amount,
+                                "currency": "ETB",
+                                "status": "active",
+                                "createdAt": firestore.SERVER_TIMESTAMP,
+                                "updatedAt": firestore.SERVER_TIMESTAMP
+                            })
+
+                        # Track revenue analytics
+                        track_revenue('deposit', amount, user_id, tx_ref)
+
+                    elif transaction_type == 'game_entry':
+                        # Handle game entry payment
+                        game_id = transaction_data.get('gameId')
+                        if game_id:
+                            process_game_entry_payment(user_id, game_id, amount, tx_ref)
 
         return jsonify({"message": "Payment callback processed"}), 200
 
     except Exception as e:
         print(f"Callback error: {str(e)}")
         return jsonify({"error": str(e)}), 500
+
+def track_revenue(transaction_type, amount, user_id, tx_ref):
+    """Track revenue for analytics"""
+    try:
+        revenue_data = {
+            "type": transaction_type,
+            "amount": amount,
+            "userId": user_id,
+            "transactionRef": tx_ref,
+            "timestamp": firestore.SERVER_TIMESTAMP,
+            "date": time.strftime("%Y-%m-%d"),
+            "month": time.strftime("%Y-%m"),
+            "year": time.strftime("%Y")
+        }
+        
+        fs_db.collection('revenue_tracking').add(revenue_data)
+        
+        # Update daily revenue summary
+        daily_ref = fs_db.collection('daily_revenue').document(time.strftime("%Y-%m-%d"))
+        daily_ref.set({
+            "total_amount": firestore.Increment(amount),
+            "transaction_count": firestore.Increment(1),
+            "last_updated": firestore.SERVER_TIMESTAMP
+        }, merge=True)
+        
+    except Exception as e:
+        print(f"Revenue tracking error: {str(e)}")
+
+def process_game_entry_payment(user_id, game_id, amount, tx_ref):
+    """Process game entry payment with house commission"""
+    try:
+        # Calculate house commission (10% default)
+        house_commission = amount * 0.10
+        prize_pool_addition = amount - house_commission
+        
+        # Update game prize pool
+        game_ref = fs_db.collection('gameRooms').document(game_id)
+        game_ref.update({
+            "prizePool": firestore.Increment(prize_pool_addition)
+        })
+        
+        # Track house revenue
+        track_revenue('house_commission', house_commission, user_id, tx_ref)
+        track_revenue('prize_pool', prize_pool_addition, user_id, tx_ref)
+        
+        print(f"Game entry processed: Prize pool +{prize_pool_addition}, House +{house_commission}")
+        
+    except Exception as e:
+        print(f"Game entry payment error: {str(e)}")
 
 
 @app.route('/api/verify-payment/<tx_ref>', methods=['GET'])
@@ -263,6 +324,129 @@ def health_check():
 @app.route('/api/test', methods=['GET'])
 def test_api():
     return jsonify({"message": "API is working", "timestamp": time.time()})
+
+@app.route('/api/admin/revenue', methods=['GET'])
+def get_revenue_analytics():
+    """Get revenue analytics (admin only)"""
+    try:
+        period = request.args.get('period', 'daily')  # daily, weekly, monthly
+        
+        if period == 'daily':
+            # Get last 30 days
+            revenue_docs = fs_db.collection('daily_revenue').limit(30).stream()
+            
+        revenue_data = []
+        total_revenue = 0
+        
+        for doc in revenue_docs:
+            data = doc.to_dict()
+            revenue_data.append({
+                "date": doc.id,
+                "amount": data.get('total_amount', 0),
+                "transactions": data.get('transaction_count', 0)
+            })
+            total_revenue += data.get('total_amount', 0)
+        
+        return jsonify({
+            "revenue_data": revenue_data,
+            "total_revenue": total_revenue,
+            "period": period
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/admin/game-stats', methods=['GET'])
+def get_game_statistics():
+    """Get game statistics for analytics"""
+    try:
+        # Get active games count
+        active_games = fs_db.collection('gameRooms').where('status', 'in', ['waiting', 'playing']).stream()
+        active_count = len(list(active_games))
+        
+        # Get completed games count (last 7 days)
+        week_ago = time.time() - (7 * 24 * 60 * 60)
+        completed_games = fs_db.collection('gameRooms').where('status', '==', 'completed').where('createdAt', '>', week_ago).stream()
+        completed_count = len(list(completed_games))
+        
+        # Get player statistics
+        total_users = len(list(fs_db.collection('users').stream()))
+        
+        return jsonify({
+            "active_games": active_count,
+            "completed_games_week": completed_count,
+            "total_users": total_users,
+            "revenue_streams": {
+                "game_commissions": "10% of entry fees",
+                "transaction_fees": "2% of deposits",
+                "premium_subscriptions": "200 ETB/month"
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/game/join-with-payment', methods=['POST'])
+def join_game_with_payment():
+    """Join game with entry fee payment"""
+    try:
+        data = request.get_json()
+        game_id = data.get('gameId')
+        user_id = data.get('userId')
+        player_info = data.get('playerInfo')
+        
+        # Get game details
+        game_ref = fs_db.collection('gameRooms').document(game_id)
+        game_doc = game_ref.get()
+        
+        if not game_doc.exists():
+            return jsonify({'error': 'Game not found'}), 404
+            
+        game_data = game_doc.to_dict()
+        entry_fee = game_data.get('entryFee', 0)
+        
+        if entry_fee > 0:
+            # Check user wallet balance
+            wallet_ref = fs_db.collection('wallets').document(user_id)
+            wallet_doc = wallet_ref.get()
+            
+            if not wallet_doc.exists() or wallet_doc.to_dict().get('balance', 0) < entry_fee:
+                return jsonify({'error': 'Insufficient wallet balance'}), 400
+            
+            # Deduct entry fee from wallet
+            wallet_ref.update({
+                "balance": firestore.Increment(-entry_fee),
+                "updatedAt": firestore.SERVER_TIMESTAMP
+            })
+            
+            # Create transaction record
+            tx_ref = f"game-entry-{user_id}-{game_id}-{int(time.time())}"
+            fs_db.collection('transactions').document(tx_ref).set({
+                "userId": user_id,
+                "gameId": game_id,
+                "amount": entry_fee,
+                "type": "game_entry",
+                "status": "completed",
+                "createdAt": firestore.SERVER_TIMESTAMP
+            })
+            
+            # Process payment (add to prize pool with commission)
+            process_game_entry_payment(user_id, game_id, entry_fee, tx_ref)
+        
+        # Add player to game
+        game_ref.update({
+            "players": firestore.ArrayUnion([player_info])
+        })
+        
+        return jsonify({
+            "success": True,
+            "message": "Successfully joined game",
+            "transaction_ref": tx_ref if entry_fee > 0 else None
+        })
+        
+    except Exception as e:
+        print(f"Join game error: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == '__main__':

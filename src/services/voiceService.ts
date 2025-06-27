@@ -27,14 +27,28 @@ class VoiceService {
     pitch: 1,
     volume: 1
   };
+  private fallbackTTS: boolean = false;
 
   constructor() {
     this.synthesis = window.speechSynthesis;
     this.loadVoices();
-    
+    this.checkLanguageSupport();
+
     // Load voices when they become available
     if (speechSynthesis.onvoiceschanged !== undefined) {
       speechSynthesis.onvoiceschanged = () => this.loadVoices();
+    }
+  }
+
+  private checkLanguageSupport() {
+    // Check if browser supports Amharic/Tigrinya voices
+    const voices = this.synthesis.getVoices();
+    const hasAmharic = voices.some(voice => voice.lang.includes('am'));
+    const hasTigrinya = voices.some(voice => voice.lang.includes('ti'));
+
+    if (!hasAmharic && !hasTigrinya) {
+      this.fallbackTTS = true;
+      console.warn('Native voice support for Amharic/Tigrinya not available');
     }
   }
 
@@ -106,11 +120,13 @@ class VoiceService {
   }
 
   async speakBingoNumber(number: number, letter: string, languageConfig: LanguageConfig): Promise<void> {
+    if (!this.settings.enabled) return;
+
     const numberText = languageConfig.numbers[number] || number.toString();
     const letterText = languageConfig.letters[letter] || letter;
-    
+
     let announcement: string;
-    
+
     if (languageConfig.code === 'am-ET') {
       // Amharic format
       announcement = `${letterText} ${numberText}`;
@@ -130,7 +146,7 @@ class VoiceService {
 
   async speakGameEvent(eventKey: string, languageConfig: LanguageConfig, params?: Record<string, any>): Promise<void> {
     let text = languageConfig.phrases[eventKey] || eventKey;
-    
+
     // Replace parameters in the text
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
