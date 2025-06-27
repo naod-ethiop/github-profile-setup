@@ -45,7 +45,12 @@ service cloud.firestore {
                     request.resource.data.keys().hasAll(['name', 'hostId', 'entryFee', 'maxPlayers']);
       allow update: if request.auth != null && 
                     (request.auth.uid == resource.data.hostId || 
-                     request.auth.uid in resource.data.get('players', []).map(['userId'], path => path.get(['userId'])));
+                     isPlayerInGame(request.auth.uid, resource.data.get('players', [])));
+    }
+
+    // Helper function to check if user is a player in the game
+    function isPlayerInGame(userId, players) {
+      return userId in players.map(p => p.id);
     }
 
     // Payments: allow server operations and user read access
