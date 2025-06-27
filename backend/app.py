@@ -30,9 +30,9 @@ try:
     else:
         # Try both possible filenames
         try:
-            cred = credentials.Certificate("backend/serviceAccountKey.json")
+            cred = credentials.Certificate("./serviceAccountKey.json")
         except FileNotFoundError:
-            cred = credentials.Certificate("backend/serviceAccountkey.json")
+            cred = credentials.Certificate("./serviceAccountkey.json")
     
     firebase_admin.initialize_app(cred)
     fs_db = firestore.client()
