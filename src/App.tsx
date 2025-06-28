@@ -11,7 +11,14 @@ import WalletPage from './components/WalletPage';
 import GameList from './components/GameList';
 import { GameProvider } from './contexts/GameContext';
 import WelcomePage from './components/WelcomePage';
+import ProfileSetup from './components/ProfileSetup';
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "./firebase/config";
+import AdminPage from './components/AdminPage';
 
+const ADMIN_UIDS = [
+  "YlXEWXPLKvMiWHdqRajvNzzpW883"
+];
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -19,7 +26,8 @@ function App() {
   const [showGameList, setShowGameList] = useState(false);
   const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
-
+  const [profileComplete, setProfileComplete] = useState<boolean | null>(null);
+  
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUser(user);
@@ -34,6 +42,14 @@ function App() {
 
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (user) {
+      getDoc(doc(db, "users", user.uid)).then(docSnap => {
+        setProfileComplete(docSnap.exists());
+      });
+    }
+  }, [user]);
 
   // Handler for selecting a game from GameList
   const handleSelectGame = (gameId: string) => {
@@ -66,6 +82,12 @@ function App() {
         <WelcomePage onComplete={() => setShowWelcome(false)} />
         <Toaster position="top-right" />
       </div>
+    );
+  }
+
+  if (profileComplete === false) {
+    return (
+      <ProfileSetup user={user} onComplete={() => setProfileComplete(true)} />
     );
   }
 
@@ -107,6 +129,18 @@ function App() {
             <Route 
               path="/wallet" 
               element={user ? <WalletPage user={user} onNavigate={() => {}} /> : <Navigate to="/auth" />} 
+            />
+            <Route
+              path="/admin"
+              element={
+                user && ADMIN_UIDS.includes(user.uid)
+                  ? <AdminPage />
+                  : <Navigate to="/" />
+              }
+            />
+            <Route
+              path="/profile"
+              element={user ? <ProfileSetup user={user} onComplete={() => {}} /> : <Navigate to="/auth" />}
             />
           </Routes>
           <Toaster position="top-right" />

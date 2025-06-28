@@ -263,6 +263,15 @@ const GameLobby: React.FC<GameLobbyProps> = ({ onShowGameList }) => {
               <Wallet className="w-4 h-4" />
               <span>{formatCurrency(wallet?.balance || 0)}</span>
             </button>
+
+            {/* Profile Button */}
+            <button
+              onClick={() => navigate('/profile')}
+              className="bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-all transform hover:scale-105"
+            >
+              <Settings className="w-4 h-4" />
+              <span>Profile</span>
+            </button>
             
             <div className="text-white text-right">
               <p className="text-sm opacity-80">Welcome back,</p>
@@ -319,6 +328,13 @@ const GameLobby: React.FC<GameLobbyProps> = ({ onShowGameList }) => {
             >
               <Plus className="w-5 h-5" />
               <span>Create Game</span>
+            </button>
+            <button
+              onClick={() => navigate('/profile')}
+              className="bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-all transform hover:scale-105"
+            >
+              <Settings className="w-4 h-4" />
+              <span>Profile</span>
             </button>
           </div>
         </div>

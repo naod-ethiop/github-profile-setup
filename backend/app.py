@@ -9,6 +9,8 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 
 load_dotenv()
+FRONTEND_URL = os.getenv("VITE_FRONTEND_URL", "http://localhost:3000")
+
 app = Flask(__name__)
 CORS(app, origins=['*'], allow_headers=['Content-Type', 'Authorization'], supports_credentials=True)
 
@@ -16,6 +18,7 @@ CHAPA_SECRET = os.getenv("CHAPA_SECRET_KEY")
 CHAPA_PUBLIC_KEY = os.getenv("CHAPA_PUBLIC_KEY")
 CHAPA_BASE_URL = os.getenv("CHAPA_BASE_URL", "https://api.chapa.co/v1")
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+CALLBACK_BASE_URL = os.getenv("CALLBACK_BASE_URL", "http://localhost:5000")
 
 print(f"Environment: {ENVIRONMENT}")
 print(f"Chapa Secret Key configured: {'Yes' if CHAPA_SECRET else 'No'}")
@@ -161,8 +164,8 @@ def wallet_deposit():
             "last_name": last_name,
             "phone_number": phone,  # <-- Pass phone to Chapa
             "tx_ref": tx_ref,
-            "callback_url": f"{request.host_url}api/payment-callback",
-            "return_url": f"{request.host_url}wallet",
+          "callback_url": f"{CALLBACK_BASE_URL}/api/payment-callback",
+            "return_url": f"{FRONTEND_URL}/wallet",  # Use frontend URL
             "customization": {
                 "title": "Deposit",  # 7 characters, valid!
                 "description": "Deposit funds to your wallet"
@@ -369,7 +372,7 @@ def process_withdrawal_simulation(tx_ref, user_id, amount, phone_number):
                         "updatedAt": firestore.SERVER_TIMESTAMP
                     })
                     
-                    track_withdrawal_analytics(user_id, amount, "failed")
+                    track_withwithdrawal_analytics(user_id, amount, "failed")
                     
             except Exception as e:
                 print(f"Withdrawal simulation error: {str(e)}")
@@ -403,67 +406,73 @@ def track_withdrawal_analytics(user_id, amount, status):
         print(f"Withdrawal analytics error: {str(e)}")
 
 
-@app.route('/api/payment-callback', methods=['GET', 'POST'])
+@app.route('/api/payment-callback', methods=['POST', 'GET'])
 def payment_callback():
     try:
-        data = request.json if request.method == 'POST' else request.args
-        print("Received Chapa callback:", data)
+        print("Callback method:", request.method)
+        print("Query params:", request.args)
+        print("JSON body:", request.get_json(silent=True))
 
-        # Extract tx_ref and status from callback
-        tx_ref = data.get('tx_ref')
-        status = data.get('status')
-        amount = float(data.get('amount', 0))
+        tx_ref = request.args.get('tx_ref')
+        data = request.get_json(silent=True) or {}
+        if not tx_ref:
+            tx_ref = data.get('tx_ref') or data.get('trx_ref')  # <-- check both
 
-        if status == "success" and tx_ref:
-            # First, get the transaction to find the userId
-            transaction_ref = fs_db.collection('transactions').document(tx_ref)
-            transaction_doc = transaction_ref.get()
+        if not tx_ref:
+            print("Callback error: tx_ref missing")
+            return jsonify({'error': 'tx_ref missing'}), 400
 
-            if transaction_doc.exists():
-                transaction_data = transaction_doc.to_dict()
-                user_id = transaction_data.get('userId')
-                transaction_type = transaction_data.get('type', 'deposit')
+        print("Received Chapa callback for tx_ref:", tx_ref)
 
-                if user_id:
-                    # Update transaction status
-                    transaction_ref.update({
-                        "status": "completed",
-                        "completedAt": firestore.SERVER_TIMESTAMP,
-                        "chapaResponse": data
+        # For GET requests, you may not get status/amount in the query string.
+        # So, always verify with Chapa API:
+        headers = {"Authorization": f"Bearer {CHAPA_SECRET}"}
+        verify_url = f"{CHAPA_BASE_URL}/transaction/verify/{tx_ref}"
+        resp = requests.get(verify_url, headers=headers, timeout=30)
+        chapa_data = resp.json()
+        print("Chapa verify response:", chapa_data)
+
+        if chapa_data.get("status") == "success" and chapa_data["data"]["status"] == "success":
+            amount = float(chapa_data["data"]["amount"])
+            user_id = None
+
+            # Find the transaction in Firestore to get userId
+            tx_ref = chapa_data["data"]["tx_ref"]
+            txn_doc = fs_db.collection('transactions').document(tx_ref).get()
+            if txn_doc.exists:
+                txn_data = txn_doc.to_dict()
+                user_id = txn_data.get("userId")
+                # Update transaction status
+                fs_db.collection('transactions').document(tx_ref).update({
+                    "status": "completed",
+                    "completedAt": firestore.SERVER_TIMESTAMP
+                })
+            else:
+                print("Transaction not found in Firestore for tx_ref:", tx_ref)
+                return jsonify({"error": "Transaction not found"}), 404
+
+            if user_id:
+                wallet_ref = fs_db.collection('wallets').document(user_id)
+                wallet_doc = wallet_ref.get()
+                if wallet_doc.exists:
+                    wallet_ref.update({
+                        "balance": firestore.Increment(amount),
+                        "updatedAt": firestore.SERVER_TIMESTAMP
                     })
+                else:
+                    wallet_ref.set({
+                        "balance": amount,
+                        "updatedAt": firestore.SERVER_TIMESTAMP
+                    })
+                print(f"Wallet updated for user {user_id}: +{amount} ETB")
+            else:
+                print("userId not found for tx_ref:", tx_ref)
+                return jsonify({"error": "userId not found"}), 404
 
-                    if transaction_type == 'deposit':
-                        # Handle deposit - add to wallet
-                        wallet_ref = fs_db.collection('wallets').document(user_id)
-                        wallet_doc = wallet_ref.get()
-
-                        if wallet_doc.exists():
-                            # Update existing wallet
-                            wallet_ref.update({
-                                "balance": firestore.Increment(amount),
-                                "updatedAt": firestore.SERVER_TIMESTAMP
-                            })
-                        else:
-                            # Create new wallet
-                            wallet_ref.set({
-                                "userId": user_id,
-                                "balance": amount,
-                                "currency": "ETB",
-                                "status": "active",
-                                "createdAt": firestore.SERVER_TIMESTAMP,
-                                "updatedAt": firestore.SERVER_TIMESTAMP
-                            })
-
-                        # Track revenue analytics
-                        track_revenue('deposit', amount, user_id, tx_ref)
-
-                    elif transaction_type == 'game_entry':
-                        # Handle game entry payment
-                        game_id = transaction_data.get('gameId')
-                        if game_id:
-                            process_game_entry_payment(user_id, game_id, amount, tx_ref)
-
-        return jsonify({"message": "Payment callback processed"}), 200
+            return jsonify({"message": "Payment callback processed"}), 200
+        else:
+            print("Payment not successful or not found for tx_ref:", tx_ref)
+            return jsonify({"error": "Payment not successful or not found"}), 400
 
     except Exception as e:
         print(f"Callback error: {str(e)}")

@@ -1,3 +1,4 @@
+import firebase from 'firebase/app';
 
 export interface Wallet {
   id: string;
@@ -5,7 +6,7 @@ export interface Wallet {
   balance: number;
   currency: string;
   status: 'active' | 'suspended' | 'closed';
-  createdAt: Date;
+  createdAt: Date | firebase.firestore.FieldValue;
   updatedAt: Date;
 }
 
@@ -23,7 +24,7 @@ export interface Transaction {
     chapaReference?: string;
     originalAmount?: number;
   };
-  createdAt: Date;
+  createdAt: firebase.firestore.FieldValue.serverTimestamp();
 }
 
 export interface PaymentMethod {

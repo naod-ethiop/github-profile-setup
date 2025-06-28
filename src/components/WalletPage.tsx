@@ -21,7 +21,7 @@ import DepositModal from './DepositModal';
 import WithdrawalModal from './WithdrawalModal';
 import TransactionHistory from './TransactionHistory';
 import toast from 'react-hot-toast';
-import { useNavigate } from 'react-router-dom'; // Import useNavigate
+import { useNavigate, useLocation } from 'react-router-dom'; // Import useNavigate and useLocation
 
 interface WalletPageProps {
   user: any;
@@ -38,7 +38,7 @@ const WalletPage: React.FC<WalletPageProps> = ({ user, onNavigate, onBack }) => 
   const [showWithdrawalModal, setShowWithdrawalModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate(); // Initialize useNavigate
-
+  const location = useLocation();
 
   useEffect(() => {
     if (!auth.currentUser) return;
@@ -69,6 +69,16 @@ const WalletPage: React.FC<WalletPageProps> = ({ user, onNavigate, onBack }) => 
     };
   }, []);
 
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get("deposit") === "success") {
+      // Optionally show a toast here
+      setTimeout(() => {
+        if (onBack) onBack();
+      }, 2000); // Wait 2 seconds before redirecting
+    }
+  }, [location, onBack]);
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-ET', {
       style: 'currency',
@@ -81,7 +91,7 @@ const WalletPage: React.FC<WalletPageProps> = ({ user, onNavigate, onBack }) => 
     const lastWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
 
     const recentTransactions = transactions.filter(t => 
-      new Date(t.createdAt) >= lastWeek
+      t.createdAt ? new Date(t.createdAt) >= lastWeek : false
     );
 
     const deposits = recentTransactions
@@ -119,8 +129,9 @@ const WalletPage: React.FC<WalletPageProps> = ({ user, onNavigate, onBack }) => 
         {/* Header */}
         <div className="flex justify-between items-center mb-8">
           <div className="flex items-center space-x-4">
+            {/* Header back arrow */}
             <button
-              onClick={() => navigate(-1)}
+              onClick={() => navigate("/")}
               className="bg-white/10 hover:bg-white/20 text-white p-2 rounded-lg transition-colors"
             >
               <ArrowLeft className="w-5 h-5" />
@@ -272,6 +283,17 @@ const WalletPage: React.FC<WalletPageProps> = ({ user, onNavigate, onBack }) => 
             wallet={wallet}
           />
         )}
+
+        {/* Back to Menu Button */}
+        <div className="mt-8">
+          <button
+            onClick={() => navigate("/")}
+            className="w-full bg-white/10 hover:bg-white/20 text-white py-3 px-4 rounded-lg font-semibold transition-all flex items-center justify-center space-x-2"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            <span>Back to Home</span>
+          </button>
+        </div>
       </div>
     </div>
   );

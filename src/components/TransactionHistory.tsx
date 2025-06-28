@@ -140,7 +140,7 @@ const TransactionHistory: React.FC<TransactionHistoryProps> = ({ userId }) => {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3"> 
       {transactions.map((transaction) => (
         <div key={transaction.id} className="bg-white/5 hover:bg-white/10 rounded-lg p-4 transition-colors">
           <div className="flex items-center justify-between">

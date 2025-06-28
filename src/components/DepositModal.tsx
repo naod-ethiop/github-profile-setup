@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import axios from "axios";
 import { doc, getDoc, collection, query, where, onSnapshot } from "firebase/firestore";
 import { db } from "../firebase/config";
+import { useNavigate } from 'react-router-dom';
 
 interface DepositModalProps {
   onClose: () => void;
@@ -15,6 +16,7 @@ const DepositModal: React.FC<DepositModalProps> = ({ onClose, wallet }) => {
   const [amount, setAmount] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const userId = auth.currentUser?.uid;
@@ -35,6 +37,8 @@ const DepositModal: React.FC<DepositModalProps> = ({ onClose, wallet }) => {
 
   const handleDeposit = async () => {
     if (!auth.currentUser || !amount) return;
+
+    const userId = auth.currentUser.uid; // <-- Get userId here
 
     const depositAmount = parseFloat(amount);
     if (depositAmount < 10) {
@@ -72,10 +76,10 @@ const DepositModal: React.FC<DepositModalProps> = ({ onClose, wallet }) => {
         first_name,
         last_name,
         phone: phone,
-        userId, // <-- Add this line
+        userId, // Now defined!
         tx_ref: `deposit-${userId}-${Date.now()}`,
-        callback_url: `${process.env.FRONTEND_URL}/deposit/callback`,
-        return_url: `${process.env.FRONTEND_URL}/wallet`,
+        callback_url: `${import.meta.env.VITE_FRONTEND_URL}/deposit/callback`,
+        return_url: `${import.meta.env.VITE_FRONTEND_URL}/wallet`,
         customization: {
           title: "Deposit",
           description: "Deposit to wallet"
@@ -86,6 +90,8 @@ const DepositModal: React.FC<DepositModalProps> = ({ onClose, wallet }) => {
 
       // Redirect user to Chapa payment page
       window.location.href = res.data.checkout_url;
+      // After successful deposit and callback, redirect:
+      // navigate("/menu");
     } catch (error: any) {
       toast.error(error.response?.data?.error || error.message || 'Deposit failed');
     } finally {
